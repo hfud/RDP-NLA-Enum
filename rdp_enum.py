@@ -10,7 +10,6 @@ class RDPProtocolChecker:
         self.port = port
         self.timeout = timeout
         
-        # Định nghĩa các protocol theo script NSE gốc
         self.PROTOCOLS = {
             "Native RDP": 0,
             "SSL": 1, 
@@ -20,7 +19,6 @@ class RDPProtocolChecker:
         }
 
     def create_connection_request(self, protocol_type=0):
-        """Tạo gói tin Connection Request theo chuẩn RDP - FIXED"""
         # TPKT Header (RFC 1006 Section 6)
         tpkt_header = struct.pack('>BBH', 3, 0, 19)  # version=3, reserved=0, length=19
         
@@ -41,7 +39,6 @@ class RDPProtocolChecker:
         return tpkt_header + x224_header + x224_cr + neg_req
 
     def parse_negotiation_response(self, data):
-        """Phân tích phản hồi negotiation từ server - IMPROVED"""
         try:
             if len(data) < 11:
                 return None, "Response too short"
@@ -61,9 +58,8 @@ class RDPProtocolChecker:
             x224_li = data[4]  # Length Indicator
             x224_cc = data[5]  # CC CDT (should be 0xD0 for Connection Confirm)
             
-            # Tìm RDP Negotiation Response
+            # Find RDP Negotiation Response
             if len(data) < 4 + x224_li + 8:
-                # Server không gửi negotiation data (chấp nhận kết nối mà không cần negotiation)
                 return 2, "Success (no negotiation data)"
             
             neg_data_start = 4 + x224_li
@@ -81,27 +77,25 @@ class RDPProtocolChecker:
                 error_code = struct.unpack('<I', neg_data[4:8])[0]
                 return error_code, f"Failure code: {error_code}"
             else:
-                # Không phải negotiation response, có thể server chấp nhận kết nối trực tiếp
                 return 2, "Success (direct connection)"
                 
         except Exception as e:
             return None, f"Parse error: {str(e)}"
 
-    def test_protocol_improved(self, protocol_name, protocol_value):
-        """Kiểm tra một protocol cụ thể - IMPROVED VERSION"""
+    def test_protocol(self, protocol_name, protocol_value):
         print(f"  Testing {protocol_name:<35}...", end="", flush=True)
         
         try:
-            # Tạo socket và kết nối
+            # Create socket and connect
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(self.timeout)
             sock.connect((self.host, self.port))
-            
-            # Gửi Connection Request với protocol cụ thể
+
+            # Send Connection Request with specific protocol
             request = self.create_connection_request(protocol_value)
             sock.send(request)
-            
-            # Nhận phản hồi - đọc toàn bộ data có sẵn
+
+            # Receive response - read all available data
             response = b""
             try:
                 while True:
@@ -109,27 +103,23 @@ class RDPProtocolChecker:
                     if not chunk:
                         break
                     response += chunk
-                    # Nếu đã nhận đủ data, thoát
                     if len(response) >= 1024:
                         break
             except socket.timeout:
-                # Timeout khi đọc là bình thường
                 pass
             except BlockingIOError:
                 pass
             
             sock.close()
             
-            # Phân tích phản hồi
             result, message = self.parse_negotiation_response(response)
             
-            if result == 2:  # SUCCESS
+            if result == 2:
                 print(" SUCCESS")
                 return True, protocol_name
             elif result is not None:
                 print(f" FAILED (Code: {result})")
             else:
-                # Kiểm tra nếu có response data (có thể server chấp nhận mà không cần negotiation)
                 if len(response) > 0:
                     print(" SUCCESS (with data)")
                     return True, protocol_name
@@ -148,9 +138,8 @@ class RDPProtocolChecker:
             print(f" ERROR: {str(e)}")
             return False, None
 
-    def check_protocols_comprehensive(self):
-        """Kiểm tra tất cả các protocol - COMPREHENSIVE VERSION"""
-        print(f"[*] Comprehensive RDP Protocol Scan for {self.host}:{self.port}")
+    def check_protocols(self):
+        print(f"[*] RDP Protocol Scan for {self.host}:{self.port}")
         print(f"[*] Timeout: {self.timeout}s")
         print()
         
@@ -158,15 +147,14 @@ class RDPProtocolChecker:
         nla_supported = False
         
         for protocol_name, protocol_value in self.PROTOCOLS.items():
-            time.sleep(0.3)  # Giảm tốc độ để tăng độ tin cậy
+            time.sleep(0.3)  # Slow down to improve reliability
             
-            success, proto_name = self.test_protocol_improved(protocol_name, protocol_value)
+            success, proto_name = self.test_protocol(protocol_name, protocol_value)
             if success:
                 supported_protocols.append(proto_name)
                 if "NLA" in proto_name:
                     nla_supported = True
         
-        # Hiển thị kết quả chi tiết
         print(f"\n" + "="*60)
         print(f"[*] SCAN RESULTS:")
         print(f"    Target: {self.host}:{self.port}")
@@ -177,18 +165,11 @@ class RDPProtocolChecker:
             
         print(f"    NLA Enabled: {'YES' if nla_supported else 'NO'}")
         
-        # Đánh giá bảo mật
-        if nla_supported:
-            print(f"    Security Assessment: GOOD (NLA provides additional security)")
-        else:
-            print(f"    Security Assessment: WARNING (NLA not enabled)")
-        
         return nla_supported, supported_protocols
 
-    def quick_nla_check(self):
-        """Chỉ kiểm tra nhanh NLA - IMPROVED"""
-        print(f"[*] Quick NLA check for {self.host}:{self.port}")
-        success, _ = self.test_protocol_improved("CredSSP (NLA)", self.PROTOCOLS["CredSSP (NLA)"])
+    def nla_check(self):
+        print(f"[*] NLA check for {self.host}:{self.port}")
+        success, _ = self.test_protocol("CredSSP (NLA)", self.PROTOCOLS["CredSSP (NLA)"])
         
         if success:
             print(f"\n[+] NLA is ENABLED on {self.host}:{self.port}")
@@ -198,23 +179,22 @@ class RDPProtocolChecker:
         return success
 
 def main():
-    parser = argparse.ArgumentParser(description='RDP Protocol Scanner - FIXED VERSION')
+    parser = argparse.ArgumentParser(description='RDP Protocol Scanner')
     parser.add_argument('host', help='Target hostname or IP address')
     parser.add_argument('-p', '--port', type=int, default=3389, help='RDP port (default: 3389)')
     parser.add_argument('-t', '--timeout', type=int, default=10, help='Timeout in seconds (default: 10)')
-    parser.add_argument('-q', '--quick', action='store_true', help='Quick NLA check only')
+    parser.add_argument('--nla-only', action='store_true', help='Check NLA status only')
     parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
     
     args = parser.parse_args()
     
     checker = RDPProtocolChecker(args.host, args.port, args.timeout)
-    
-    if args.quick:
-        nla_enabled = checker.quick_nla_check()
+
+    if args.nla_only:
+        nla_enabled = checker.nla_check()
     else:
-        nla_enabled, protocols = checker.check_protocols_comprehensive()
+        nla_enabled, protocols = checker.check_protocols()
     
-    # Return exit code
     sys.exit(0 if nla_enabled else 1)
 
 if __name__ == "__main__":
